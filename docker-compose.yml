@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16.4
+    container_name: postgresdb
+    command: >
+      postgres -c shared_preload_libraries=pg_stat_statements
+               -c pg_stat_statements.track=all
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: Testlocal@gmail.com
+      PGADMIN_DEFAULT_PASSWORD: postgres@123
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+    restart: always
+
+volumes:
+  postgres_data:
