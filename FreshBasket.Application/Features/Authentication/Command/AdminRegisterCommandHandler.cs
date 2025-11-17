@@ -29,17 +29,17 @@ namespace FreshBasket.Application.Features.Authentication.Command
                     .FirstOrDefaultAsync(r => r.Name == "Admin", cancellationToken);
 
                 if (adminRole == null)
-                    return "Admin role not found in Roles table.";
+                    return "Admin role not found.";
 
                 var (hash, salt) = _passwordHasher.HashPassword(request.Password);
 
                 var adminUser = new User
                 {
                     Id = Guid.NewGuid(),
-                    UserName = request.Email,
+                    UserName =  request.Email,
                     Email = request.Email,
-                    PasswordHash = hash,
-                    PasswordSalt = salt,
+                    PasswordHash = hash,        
+                    PasswordSalt = salt,        
                     IsActive = true,
                     CreatedAt = DateTime.UtcNow,
                     RoleId = adminRole.Id
@@ -50,15 +50,13 @@ namespace FreshBasket.Application.Features.Authentication.Command
 
                 return "Admin registered successfully.";
             }
-            catch (DbUpdateException dbEx)
+            catch (DbUpdateException)
             {
-                Console.WriteLine($"Database error: {dbEx.Message}");
-                return "Failed to register admin due to database error.";
+                return "Database error during registration.";
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.WriteLine($"An error occurred: {ex.Message}");
-                return "Failed to register admin due to an unexpected error.";
+                return "Unexpected error.";
             }
         }
 

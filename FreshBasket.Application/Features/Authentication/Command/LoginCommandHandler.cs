@@ -4,6 +4,7 @@ using FreshBasket.Infrastructure.DbContexts;
 using FreshBasket.Infrastructure.Entities.Authentication;
 using FreshBasket.Shared.Common;
 using MediatR;
+using Microsoft.AspNetCore.Cryptography.KeyDerivation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
@@ -21,44 +22,65 @@ namespace FreshBasket.Application.Features.Authentication.Command
     {
         private readonly IConfiguration _configuration;
         private readonly FreshBasketDbContext _dbContext;
+        private readonly IPasswordHasher _passwordHasher;
 
-        public LoginCommandHandler(IConfiguration configuration, FreshBasketDbContext dbContext)
+        public LoginCommandHandler(IConfiguration configuration, FreshBasketDbContext dbContext, IPasswordHasher passwordHasher)
         {
             _configuration = configuration;
             _dbContext = dbContext;
+            _passwordHasher = passwordHasher;
         }
 
         public async Task<ApiResponse<LoginResponse>> Handle(LoginCommand request, CancellationToken cancellationToken)
         {
-            var user = await _dbContext.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Email == request.Email, cancellationToken);
-            if (user == null)
-                throw new UnauthorizedAccessException("Invalid credentials");
+            var user = await _dbContext.Users
+                .Include(u => u.Role)
+                .FirstOrDefaultAsync(u => u.Email == request.Email, cancellationToken);
 
-            // Generate JWT token
+            if (user == null)
+                return ApiResponse<LoginResponse>.FailureResponse("Invalid email or password");
+
+            bool isValid = _passwordHasher.VerifyPassword(
+                request.Password,
+                user.PasswordHash,
+                user.PasswordSalt
+            );
+
+            if (!isValid)
+                return ApiResponse<LoginResponse>.FailureResponse("Invalid email or password");
+
             var tokenHandler = new JwtSecurityTokenHandler();
-            var key = Encoding.ASCII.GetBytes(_configuration["Jwt:Key"]);
+            var key = Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]);
+
             var tokenDescriptor = new SecurityTokenDescriptor
             {
-                Subject = new ClaimsIdentity(new Claim[]
+                Subject = new ClaimsIdentity(new[]
                 {
-                    new Claim(ClaimTypes.Name, user.UserName),
-                    new Claim(ClaimTypes.Email, user.Email)
+                   new Claim(ClaimTypes.Name, user.UserName),
+                   new Claim(ClaimTypes.Email, user.Email),
+                    new Claim(ClaimTypes.Role, user.Role.Name)
                 }),
-                Expires = DateTime.UtcNow.AddHours(1),
+                Expires = DateTime.UtcNow.AddHours(2),
                 Issuer = _configuration["Jwt:Issuer"],
                 Audience = _configuration["Jwt:Audience"],
-                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+                SigningCredentials = new SigningCredentials(
+                    new SymmetricSecurityKey(key),
+                    SecurityAlgorithms.HmacSha256Signature)
             };
 
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-            var jwtToken = tokenHandler.WriteToken(token);
-            var responseData = new LoginResponse
+            string jwtToken = tokenHandler.WriteToken(tokenHandler.CreateToken(tokenDescriptor));
+
+            var result = new LoginResponse
             {
                 Token = jwtToken,
-                Role = user.Role.Name.ToString(),
-                Message = "Login successful."
+                Role = user.Role.Name,
+                Message = "Login successful"
             };
-            return ApiResponse<LoginResponse>.SuccessResponse(responseData, "Login successful.");
+
+            return ApiResponse<LoginResponse>.SuccessResponse(result, "Login successful");
         }
+
+
+
     }
 }
